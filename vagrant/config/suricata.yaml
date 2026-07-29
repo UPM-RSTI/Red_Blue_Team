@@ -1,0 +1,302 @@
+%YAML 1.1
+---
+# =============================================================================
+# suricata.yaml  –  Pre-configured for SURI-CALDERA IDS Lab
+# Home network covers localhost and the Vagrant private network.
+# =============================================================================
+
+vars:
+  address-groups:
+    HOME_NET: "[127.0.0.1/32, 192.168.56.0/24, 10.0.0.0/8]"
+    EXTERNAL_NET: "!$HOME_NET"
+
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS:  "$HOME_NET"
+    DNS_SERVERS:  "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+
+    AIM_SERVERS:  "$EXTERNAL_NET"
+    DC_SERVERS:   "$HOME_NET"
+    DNP3_SERVER:  "$HOME_NET"
+    DNP3_CLIENT:  "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT:  "$HOME_NET"
+    ENIP_SERVER:  "$HOME_NET"
+
+  port-groups:
+    HTTP_PORTS:   "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS:    22
+    DNP3_PORTS:   20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS, 110, 143]"
+    FTP_PORTS:    21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS:  4789
+    TEREDO_PORTS: 3544
+
+# ── Default flow timeouts ─────────────────────────────────────────────────────
+default-log-dir: /var/log/suricata/
+
+stats:
+  enabled: yes
+  interval: 8
+
+# ── Output configuration ──────────────────────────────────────────────────────
+outputs:
+  - fast:
+      enabled: yes
+      filename: fast.log
+      append: yes
+
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+            http-body: yes
+            http-body-printable: yes
+            tagged-packets: yes
+        - http:
+            extended: yes
+        - dns:
+            query: yes
+            answer: yes
+        - tls:
+            extended: yes
+        - files:
+            force-magic: no
+        - smtp: {}
+        - dnp3: {}
+        - ftp: {}
+        - rdp: {}
+        - nfs: {}
+        - smb: {}
+        - tftp: {}
+        - ikev2: {}
+        - dcerpc: {}
+        - krb5: {}
+        - bittorrent-dht: {}
+        - ssh: {}
+        - flow: {}
+        - netflow: {}
+
+  - unified2-alert:
+      enabled: no
+
+  - http-log:
+      enabled: yes
+      filename: http.log
+      append: yes
+
+  - stats:
+      enabled: yes
+      filename: stats.log
+      append: yes
+      totals: yes
+      threads: no
+      null-values: yes
+
+  - syslog:
+      enabled: no
+      facility: local5
+      format: "[%i] <%d> -- "
+
+  - drop:
+      enabled: no
+      filename: drop.log
+      append: yes
+
+  - file-store:
+      version: 2
+      enabled: no
+
+# ── Detection settings ────────────────────────────────────────────────────────
+detect:
+  profile: medium
+  custom-values:
+    toclient-groups: 3
+    toserver-groups: 25
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+
+# ── Capture settings ──────────────────────────────────────────────────────────
+af-packet:
+  - interface: eth0
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+    ring-size: 2048
+    block-size: 32768
+    block-timeout: 10
+    use-emergency-flush: yes
+    buffer-size: 32768
+    disable-promisc: no
+    detect-thread-ratio: 1.0
+    bpf-filter: ""
+    bypass: no
+
+pcap:
+  - interface: eth0
+    snaplen: 1518
+    buffer-size: 32768
+    bpf-filter: ""
+    checksum-checks: auto
+    threads: auto
+
+# ── Application layer protocols ───────────────────────────────────────────────
+app-layer:
+  protocols:
+    rfb:
+      enabled: yes
+      detection-ports:
+        dp: 5900, 5901, 5902, 5903, 5904, 5905, 5906, 5907, 5908, 5909
+    rdp:
+      enabled: yes
+    sip:
+      enabled: yes
+    krb5:
+      enabled: yes
+    ikev2:
+      enabled: yes
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+    dcerpc:
+      enabled: yes
+    ftp:
+      enabled: yes
+      memcap: 64mb
+    rdp:
+      enabled: yes
+    ssh:
+      enabled: yes
+    smtp:
+      enabled: yes
+      raw-extraction: no
+      mime:
+        decode-mime: yes
+        decode-base64: yes
+        decode-quoted-printable: yes
+        header-value-depth: 2000
+        extract-urls: yes
+        body-md5: no
+      inspected-tracker:
+        content-limit: 100000
+        content-inspect-min-size: 32768
+        content-inspect-window: 4096
+    imap:
+      enabled: detection-only
+    dns:
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 100kb
+          response-body-limit: 100kb
+          request-body-minimal-inspect-size: 32kb
+          request-body-inspect-window: 4kb
+          response-body-minimal-inspect-size: 40kb
+          response-body-inspect-window: 16kb
+          response-body-decompress-layer-limit: 2
+          http-body-inline: auto
+          swf-decompression:
+            enabled: yes
+            type: both
+            compress-depth: 100kb
+            decompress-depth: 100kb
+          double-decode-path: no
+          double-decode-query: no
+    modbus:
+      enabled: no
+      detection-ports:
+        dp: 502
+      request-flood: 500
+    dnp3:
+      enabled: no
+      detection-ports:
+        dp: 20000
+    enip:
+      enabled: no
+      detection-ports:
+        dp: 44818
+        sp: 44818
+    nfs:
+      enabled: yes
+    ikev2:
+      enabled: yes
+    tftp:
+      enabled: yes
+    ntp:
+      enabled: yes
+    dhcp:
+      enabled: yes
+    bittorrent-dht:
+      enabled: yes
+
+# ── Engine analysis ───────────────────────────────────────────────────────────
+engine-analysis:
+  rules-fast-pattern: yes
+  rules: yes
+
+# ── Lua ───────────────────────────────────────────────────────────────────────
+lua:
+  states: 128
+
+# ── Rules ────────────────────────────────────────────────────────────────────
+default-rule-path: /var/lib/suricata/rules
+rule-files:
+  - suricata.rules
+
+classification-file: /etc/suricata/classification.config
+reference-config-file: /etc/suricata/reference.config
+threshold-file: /etc/suricata/threshold.config
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+coredump:
+  max-dump: unlimited
+
+host-mode: auto
+max-pending-packets: 1024
+default-packet-size: 1514
+unix-command:
+  enabled: auto
+  filename: /var/run/suricata/suricata-command.socket
+
+legacy:
+  uricontent: enabled
+
+logging:
+  default-log-level: notice
+  default-output-filter:
+  outputs:
+    - console:
+        enabled: yes
+    - file:
+        enabled: yes
+        level: info
+        filename: /var/log/suricata/suricata.log
+    - syslog:
+        enabled: no
+        facility: local5

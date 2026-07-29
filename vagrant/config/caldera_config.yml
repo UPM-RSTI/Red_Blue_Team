@@ -1,0 +1,86 @@
+# =============================================================================
+# caldera_config.yml  –  Pre-configured Caldera for SURI-CALDERA IDS Lab
+# Based on: https://github.com/mitre/caldera/blob/master/conf/default.yml
+# =============================================================================
+
+ability_refresh: 60
+
+api_key_blue: BLUEADMIN123
+api_key_red: REDADMIN123
+
+app.contact.dns.domain: mycaldera.caldera
+app.contact.dns.socket: 0.0.0.0:8853
+app.contact.gist: API_KEY
+app.contact.html: /weather
+app.contact.http: http://0.0.0.0:8888
+app.contact.slack.api_key: SLACK_TOKEN
+app.contact.slack.bot_id: SLACK_BOT_ID
+app.contact.slack.channel_id: SLACK_CHANNEL_ID
+app.contact.tcp: 0.0.0.0:7010
+app.contact.tunnel.ssh.host_key_file: conf/tunnel.pem
+app.contact.tunnel.ssh.socket: 0.0.0.0:8022
+app.contact.udp: 0.0.0.0:7011
+app.contact.websocket: 127.0.0.1:7012
+
+app.frontend.api_base_url: http://localhost:8888
+
+auth.login.handler.module: default
+
+crypt_salt: REPLACE_WITH_RANDOM_SALT
+
+database:
+  type: tinydb
+  path: conf/object_store
+
+encryption_key: CALDERAKEY1234567890
+
+exfil_dir: /tmp/caldera
+
+host: 0.0.0.0
+
+plugins:
+  - access
+  - atomic
+  - compass
+  - debrief
+  - fieldmanual
+  - gameboard
+  - manx
+  - response
+  - sandcat
+  - ssl
+  - stockpile
+  - training
+
+port: 8888
+
+reports_dir: reports
+
+requirements:
+  go:
+    command: go version
+    type: installed_program
+    version: 1.19
+  python:
+    command: python3 --version
+    type: installed_program
+    version: 3.8
+
+rest_api_timeout: 60
+
+users:
+  blue:
+    blue: admin
+  red:
+    admin: admin
+
+# Caldera-specific settings
+default_adversary: Nosy Neighbor
+default_planner: sequential
+default_source: basic
+
+logging:
+  handler: stream
+  level: INFO
+  max_bytes: 10000000
+  max_backups: 5
