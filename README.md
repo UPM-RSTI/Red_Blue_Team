@@ -10,7 +10,7 @@ A production-ready Vagrant-based lab environment for learning offensive and defe
 
 1. [Prerequisites](#prerequisites)
 2. [Quick Start](#quick-start)
-3. [VM Specifications](#vm-specifications)
+3. [Lab Topology & VM Specifications](#lab-topology--vm-specifications)
 4. [Access URLs & Credentials](#access-urls--credentials)
 5. [Service Management](#service-management)
 6. [Lab Structure](#lab-structure)
@@ -32,9 +32,11 @@ Install the following tools on your host machine:
 | Git | any | https://git-scm.com/downloads |
 
 **Hardware requirements (host machine):**
-- RAM: 8 GB minimum (4 GB reserved for the VM)
-- Disk: 25 GB free space
-- CPU: 4 cores recommended (2 dedicated to the VM)
+- RAM: 8 GB minimum (6 GB reserved for the two VMs: 4 GB server + 2 GB agent)
+- Disk: 35 GB free space (both VMs + OVA export headroom)
+- CPU: 4 cores recommended (2 dedicated to each VM)
+
+**Network requirement:** The `caldera-server` VM needs outbound internet access during provisioning and while running the notebooks — `suricata-update` downloads rule sets and the IDS notebook automatically downloads the PCAP files it analyzes from `malware-traffic-analysis.net`.
 
 ---
 
@@ -42,46 +44,72 @@ Install the following tools on your host machine:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/xavierlarrivaUPM/SURI-CALDERA-IDS-PRACTICE.git
-cd SURI-CALDERA-IDS-PRACTICE
+git clone https://github.com/UPM-RSTI/Red_Blue_Team.git
+cd Red_Blue_Team
 
-# 2. Start the VM (first time: ~15-20 minutes for provisioning)
+# 2. Start both VMs (first time: ~15-20 minutes for provisioning)
 vagrant up
+#    (or bring them up one at a time: `vagrant up caldera-server` / `vagrant up caldera-agent`)
 
 # 3. Open the lab in your browser
-#    Caldera:  http://localhost:8888   (admin / admin)
+#    Caldera:  http://localhost:18888   (admin / admin)
 #    Jupyter:  http://localhost:8889
 
-# 4. SSH into the VM (optional)
-vagrant ssh
+# 4. SSH into a VM (optional) — name the machine, there are two now
+vagrant ssh caldera-server
+vagrant ssh caldera-agent
 
 # 5. Shutdown when done
 vagrant halt
 
-# 6. Destroy the VM (removes all data)
+# 6. Destroy the VMs (removes all data)
 vagrant destroy
 ```
 
 ---
 
-## VM Specifications
+## Lab Topology & VM Specifications
+
+The lab is a **two-VM topology**: a fully provisioned server running Caldera, Suricata and Jupyter, plus a plain, unprovisioned agent machine that acts as the Red Team's target — this is where you deploy the Caldera (Sandcat) agent by hand, following Section B.1 of the `CALDERA_RED_TEAM_PRACTICE_V2` notebook.
+
+```
+Host machine
+ ├─ caldera-server  (192.168.56.10)  →  Caldera + Suricata + Jupyter, fully provisioned
+ └─ caldera-agent   (192.168.56.11)  →  Bare Ubuntu box, target for the Sandcat agent
+```
+
+### `caldera-server`
 
 | Parameter | Value |
 |-----------|-------|
 | Base OS   | Ubuntu 22.04 LTS (Jammy) |
+| VM name   | SURI-CALDERA-IDS-LABV3 |
 | vCPU      | 2 cores |
 | RAM       | 4096 MB |
 | Disk      | 20 GB |
 | Network   | Private 192.168.56.10 + forwarded ports |
 
-**Forwarded Ports:**
+**Forwarded ports:**
 
 | Service | Guest Port | Host Port |
 |---------|-----------|-----------|
-| Caldera Web UI | 8888 | 8888 |
+| Caldera Web UI | 8888 | **18888** |
 | Jupyter Notebook | 8889 | 8889 |
-| SSH | 22 | 2222 |
+| SSH | 22 | 2223 |
 | Suricata API (optional) | 5000 | 5000 |
+
+### `caldera-agent`
+
+| Parameter | Value |
+|-----------|-------|
+| Base OS   | Ubuntu 22.04 LTS (Jammy), unprovisioned |
+| VM name   | CALDERA-AGENT-NODE |
+| vCPU      | 2 cores |
+| RAM       | 2048 MB |
+| Disk      | 15 GB |
+| Network   | Private 192.168.56.11 + forwarded SSH (host **2224**) |
+
+> ⚠️ **Note:** The Caldera Web UI host port is **18888**, not 8888 — the guest-side service still listens on 8888 (that's what `check_services.sh` checks *inside* the VM), but the Vagrantfile forwards it to host port 18888 to avoid clashing with other local services. Always browse to `http://localhost:18888` from your host.
 
 ---
 
@@ -89,11 +117,12 @@ vagrant destroy
 
 | Service | URL | Username | Password |
 |---------|-----|----------|----------|
-| Caldera Web | http://localhost:8888 | `admin` | `admin` |
-| Caldera REST API | http://localhost:8888/api/v2 | API Key | `REDADMIN123` |
+| Caldera Web | http://localhost:18888 | `admin` | `admin` |
+| Caldera REST API | http://localhost:18888/api/v2 | API Key (`KEY` header) | `REDADMIN123` (red) / `BLUEADMIN123` (blue) |
 | Jupyter Notebook | http://localhost:8889 | — | (no password) |
-| VM SSH | `vagrant ssh` | `vagrant` | `vagrant` |
-| Student user | SSH | `student` | `student` |
+| `caldera-server` SSH | `vagrant ssh caldera-server` or `ssh -p 2223 vagrant@127.0.0.1` | `vagrant` | `vagrant` |
+| `caldera-agent` SSH | `vagrant ssh caldera-agent` or `ssh -p 2224 vagrant@127.0.0.1` | `vagrant` | `vagrant` |
+| Student user (on `caldera-server`) | SSH | `student` | `student` |
 
 > ⚠️ **Security note:** This lab uses simplified credentials on purpose. Never expose it to the internet. It is designed for isolated networks only.
 
@@ -101,7 +130,7 @@ vagrant destroy
 
 ## Service Management
 
-Run these commands **inside the VM** (`vagrant ssh`):
+Run these commands **inside the `caldera-server` VM** (`vagrant ssh caldera-server`):
 
 ```bash
 # Check all services
@@ -130,18 +159,20 @@ sudo systemctl restart jupyter
 sudo journalctl -u jupyter -f
 ```
 
+The `caldera-agent` VM has no services of its own — it only needs to reach `caldera-server` over the private network (`ping 192.168.56.10`) so a Sandcat agent deployed there can register.
+
 ---
 
 ## Lab Structure
 
 ```
-SURI-CALDERA-IDS-PRACTICE/
+Red_Blue_Team/
 ├── README.md                          # This file
-├── Vagrantfile                        # VM configuration
+├── Vagrantfile                        # Two-VM configuration (caldera-server + caldera-agent)
 ├── requirements.txt                   # Python dependencies
 ├── EXPORT_TO_OVA.md                  # OVA export instructions
 ├── vagrant/
-│   ├── provision.sh                   # Main provisioning orchestrator
+│   ├── provision.sh                   # Main provisioning orchestrator (caldera-server only)
 │   ├── install_caldera.sh            # Caldera installation
 │   ├── install_suricata.sh           # Suricata installation
 │   ├── install_jupyter.sh            # Jupyter installation
@@ -153,9 +184,15 @@ SURI-CALDERA-IDS-PRACTICE/
 │       ├── start_services.sh         # Start all services
 │       └── check_services.sh         # Health check
 └── notebooks/
-    ├── SURI_CALDERA_ADVERSARY_PRACTICE.ipynb   # Adversary emulation lab (Caldera + Suricata live)
-    └── SURI_IDS_MASTER-2.ipynb                 # IDS offline PCAP analysis lab (Suricata + fast.log/eve.json)
+    ├── CALDERA_RED_TEAM_PRACTICE_V2_EN.ipynb   # ⭐ Red Team lab (English) — Caldera only
+    ├── CALDERA_RED_TEAM_PRACTICE_V2 (1).ipynb  #    Same lab, Spanish version
+    ├── SURI_IDS_MASTER_V2_EN.ipynb             # ⭐ IDS lab (English) — offline PCAP analysis with Suricata
+    ├── server_SURI_IDS_MASTER_V2.ipynb         #    Same lab, Spanish version
+    ├── SURI_CALDERA_ADVERSARY_PRACTICE.ipynb   #    Legacy combined lab (Spanish) — Caldera + Suricata live
+    └── SURI_IDS_MASTER-2.ipynb                 #    Legacy IDS lab (Spanish, V1) — superseded by *_V2_EN
 ```
+
+**Which notebook should I use?** The two `*_V2` notebooks are the current, actively maintained practices and are available in both English (recommended) and Spanish — pick the language your students need. `SURI_CALDERA_ADVERSARY_PRACTICE.ipynb` and `SURI_IDS_MASTER-2.ipynb` are the earlier, Spanish-only combined lab kept for reference; new cohorts should use the `V2` split labs instead.
 
 ---
 
@@ -173,9 +210,55 @@ vagrant up → open http://localhost:8889 → run notebook cells
 Import OVA in VirtualBox → Start VM → open http://localhost:8889
 ```
 
+### Deploying the Sandcat agent (Red Team lab only)
+
+`CALDERA_RED_TEAM_PRACTICE_V2` needs at least one registered agent before Section B. Deploy it on the `caldera-agent` VM:
+
+```bash
+vagrant ssh caldera-agent
+
+# Inside caldera-agent:
+curl -s -X POST -H 'file:sandcat.go-linux' \
+     -H 'platform:linux' \
+     http://192.168.56.10:8888/file/download > /tmp/sandcat
+chmod +x /tmp/sandcat
+/tmp/sandcat -server http://192.168.56.10:8888 -group red -v
+```
+
+The agent registers itself with Caldera over the private network and shows up in the agent list the notebook queries in Section 0 / B.1.
+
 ### Notebook Sections
 
-#### SURI_CALDERA_ADVERSARY_PRACTICE.ipynb — Adversary Emulation Lab
+#### CALDERA_RED_TEAM_PRACTICE_V2_EN.ipynb — Red Team Lab (Caldera only)
+
+| # | Section | Description |
+|---|---------|-------------|
+| 0 | Environment Validation | Check `caldera`/`jupyter` services and API connectivity |
+| 1 | Conceptual Introduction | Caldera architecture, key concepts, ATT&CK mapping, Caldera vs Metasploit |
+| A | Caldera Fundamentals | Explore abilities, predefined adversaries, planners |
+| B | First Operation – Recon | Register agent, build a Discovery adversary, run and analyze an operation |
+| C | Intermediate Operation – Multi-Tactic | Attack chain design across Discovery → Credential Access → Execution → Collection |
+| D | Advanced Operation | Persistence, lateral movement, data exfiltration (with API verification of each step) |
+| E | Analysis with Python/Pandas | Extract operation data, success-rate tables, 4-panel chart dashboard |
+
+#### SURI_IDS_MASTER_V2_EN.ipynb — IDS Lab (offline PCAP analysis)
+
+| # | Section | Description |
+|---|---------|-------------|
+| 1 | Environment Check & Installation | Auto-detects Colab/Vagrant/generic environment, verifies Suricata |
+| 2 | `suricata.yaml` Review | HOME_NET/EXTERNAL_NET, rule paths, `fast.log`/`eve.json` outputs |
+| 3 | `suricata-update` | Rule counts before/after, ET Open rule sources |
+| 4 | PCAP 1 Analysis | *Webserver scans and probes* — auto-downloaded, analyzed offline with `-r` |
+| 5 | PCAP 2 Analysis | *WannaCry/EternalBlue* — auto-downloaded, analyzed offline with `-r` |
+| 6 | Comparative Analysis | Side-by-side charts, alert/protocol comparison between the two PCAPs |
+| 7 | Technical Report Template | Guided questions for the student's written report |
+
+> This notebook is self-contained and portable: it auto-detects whether it's running on Vagrant, Google Colab, or a generic machine, and downloads both PCAPs itself — no manual file placement needed (an internet connection is required).
+
+#### Legacy notebooks (Spanish only)
+
+<details>
+<summary>SURI_CALDERA_ADVERSARY_PRACTICE.ipynb — combined Red+Blue lab (12 sections)</summary>
 
 | # | Section | Description |
 |---|---------|-------------|
@@ -192,7 +275,10 @@ Import OVA in VirtualBox → Start VM → open http://localhost:8889
 | 11 | APT Case Study | Full campaign simulation |
 | 12 | Export & Reporting | Generate JSON report |
 
-#### SURI_IDS_MASTER-2.ipynb — Offline PCAP Analysis Lab
+</details>
+
+<details>
+<summary>SURI_IDS_MASTER-2.ipynb — offline PCAP analysis (V1, superseded by SURI_IDS_MASTER_V2)</summary>
 
 | # | Section | Description |
 |---|---------|-------------|
@@ -203,6 +289,8 @@ Import OVA in VirtualBox → Start VM → open http://localhost:8889
 | 5 | PCAP 2 Analysis | WannaCry/EternalBlue — fast.log + eve.json |
 | 6 | Comparative Analysis | Side-by-side comparison, config proposals |
 | 7 | Technical Report Template | Guided questions for student report |
+
+</details>
 
 ---
 
@@ -219,31 +307,38 @@ Check VirtualBox is installed and the nested virtualization is enabled if runnin
 ### Caldera not accessible
 
 ```bash
-vagrant ssh -c "sudo systemctl status caldera"
-vagrant ssh -c "sudo journalctl -u caldera --no-pager -n 50"
+vagrant ssh caldera-server -c "sudo systemctl status caldera"
+vagrant ssh caldera-server -c "sudo journalctl -u caldera --no-pager -n 50"
 ```
+
+Remember the host-side URL is `http://localhost:18888`, not 8888.
 
 ### Suricata not detecting traffic
 
 ```bash
-vagrant ssh -c "sudo systemctl status suricata"
-vagrant ssh -c "sudo journalctl -u suricata --no-pager -n 50"
+vagrant ssh caldera-server -c "sudo systemctl status suricata"
+vagrant ssh caldera-server -c "sudo journalctl -u suricata --no-pager -n 50"
 # Check interface
-vagrant ssh -c "ip route | grep default"
+vagrant ssh caldera-server -c "ip route | grep default"
 ```
 
 ### Jupyter not loading
 
 ```bash
-vagrant ssh -c "sudo systemctl status jupyter"
+vagrant ssh caldera-server -c "sudo systemctl status jupyter"
 # Restart
-vagrant ssh -c "sudo systemctl restart jupyter"
+vagrant ssh caldera-server -c "sudo systemctl restart jupyter"
 ```
+
+### Sandcat agent won't register
+
+- Confirm `caldera-agent` can reach the server: `vagrant ssh caldera-agent -c "ping -c2 192.168.56.10"`
+- Re-run the `curl`/`sandcat` deployment commands from [Deploying the Sandcat agent](#deploying-the-sandcat-agent-red-team-lab-only) — the agent talks to Caldera over the private network (`192.168.56.10:8888`), not the forwarded host port.
 
 ### Re-run provisioning
 
 ```bash
-vagrant provision
+vagrant provision caldera-server
 ```
 
 ### Start from scratch
@@ -261,10 +356,12 @@ See [EXPORT_TO_OVA.md](EXPORT_TO_OVA.md) for complete step-by-step instructions.
 **Quick summary:**
 
 1. Complete `vagrant up` and verify everything works
-2. In VirtualBox Manager: select **SURI-CALDERA-IDS-LAB** → File → Export Appliance
+2. In VirtualBox Manager: select **SURI-CALDERA-IDS-LABV3** (the `caldera-server` VM) → File → Export Appliance
 3. Choose OVF 2.0 format, output file `SURI-CALDERA-LAB.ova`
 4. Share the `.ova` file with students
 5. Students: File → Import Appliance → run notebook
+
+> The `caldera-agent` VM is not part of the OVA — it's a disposable Sandcat target students can recreate locally with `vagrant up caldera-agent`, or any other Linux box on the same network, if they only need the OVA for the Blue Team / IDS notebook.
 
 ---
 
@@ -272,18 +369,15 @@ See [EXPORT_TO_OVA.md](EXPORT_TO_OVA.md) for complete step-by-step instructions.
 
 After completing this lab, students will be able to:
 
-**Adversary Emulation (SURI_CALDERA_ADVERSARY_PRACTICE.ipynb):**
-- ✅ Understand the MITRE ATT&CK framework and how it maps to real attacks
-- ✅ Deploy and operate MITRE Caldera for adversary emulation
-- ✅ Configure and use Suricata as a network IDS
-- ✅ Create custom Suricata detection rules
-- ✅ Analyze `eve.json` logs with Python (pandas, matplotlib)
-- ✅ Correlate attack techniques with IDS alerts
-- ✅ Measure detection coverage and identify gaps
-- ✅ Generate security incident reports
+**Red Team Emulation (CALDERA_RED_TEAM_PRACTICE_V2_EN.ipynb):**
+- ✅ Understand the MITRE ATT&CK framework and Caldera's architecture (agents, abilities, adversaries, planners)
+- ✅ Deploy a Sandcat agent and operate MITRE Caldera for adversary emulation
+- ✅ Design multi-tactic attack chains (Discovery → Credential Access → Execution → Collection)
+- ✅ Establish persistence, perform lateral movement, and simulate data exfiltration
+- ✅ Analyze operation results with Python (pandas, matplotlib/seaborn)
 - ✅ Understand the attacker/defender duality in cybersecurity
 
-**Offline PCAP Analysis (SURI_IDS_MASTER-2.ipynb):**
+**Blue Team / IDS Analysis (SURI_IDS_MASTER_V2_EN.ipynb):**
 - ✅ Interpret and modify `/etc/suricata/suricata.yaml` (HOME_NET, EXTERNAL_NET, rule paths)
 - ✅ Update and validate Suricata rules with `suricata-update`
 - ✅ Run Suricata in offline mode (`-r`) against real-world PCAP captures
