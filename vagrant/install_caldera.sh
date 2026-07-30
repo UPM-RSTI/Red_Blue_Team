@@ -49,7 +49,9 @@ apt-get clean
 # Install Node.js 20.x from NodeSource
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
-npm install -g npm@latest
+# Note: do NOT `npm install -g npm@latest` here — recent npm releases require
+# Node >=22/24/26 and refuse to install on the Node 20.x LTS this script pins.
+# The npm bundled with Node 20.x is new enough to build magma.
 node --version
 npm --version
 

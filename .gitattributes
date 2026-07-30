@@ -1,0 +1,9 @@
+# Force LF line endings for files consumed by the Linux VMs.
+# Without this, Git on Windows (core.autocrlf=true) checks these out with
+# CRLF, which breaks `bash`/`sh` execution inside the Vagrant guest
+# (e.g. "set: pipefail: invalid option name").
+*.sh            text eol=lf
+Vagrantfile     text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.py            text eol=lf
